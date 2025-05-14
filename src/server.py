@@ -1,0 +1,234 @@
+"""
+Crypto Price Tracker MCP Server
+Main entry point for the MCP server implementation
+"""
+from mcp.server.fastmcp import FastMCP
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+
+import os
+from datetime import datetime
+from typing import Dict, List, Optional
+
+# Import modules for different components
+from api_client import CryptoApiClient
+from sheets_client import GoogleSheetsClient
+from watchlist import WatchlistManager
+
+@dataclass
+class AppContext:
+    """Application context for lifespan management"""
+    api_client: CryptoApiClient
+    sheets_client: Optional[GoogleSheetsClient]
+    watchlist_manager: WatchlistManager
+
+
+@asynccontextmanager
+async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
+    """Manage application lifecycle with type-safe context"""
+    # Initialize API client
+    api_client = CryptoApiClient()
+    
+    # Initialize Google Sheets client if credentials are available
+    sheets_client = None
+    if os.path.exists("credentials.json"):
+        try:
+            sheets_client = GoogleSheetsClient("credentials.json")
+        except Exception as e:
+            print(f"Failed to initialize Google Sheets client: {e}")
+    
+    # Initialize watchlist manager
+    watchlist_manager = WatchlistManager()
+    
+    # Yield the context with initialized components
+    try:
+        yield AppContext(
+            api_client=api_client,
+            sheets_client=sheets_client,
+            watchlist_manager=watchlist_manager
+        )
+    finally:
+        # Cleanup resources
+        if sheets_client:
+            await sheets_client.close()
+
+# Create an MCP server instance
+mcp = FastMCP("Crypto Price Tracker", lifespan=app_lifespan)
+
+# # === Resources ===
+
+# @mcp.resource("watchlist://all")
+# async def get_watchlist():
+#     """Get the current watchlist of tracked cryptocurrencies"""
+#     # Access lifespan context directly from the MCP object
+#     watchlist = mcp.lifespan_context.watchlist_manager.get_watchlist()
+#     return "\n".join([f"{coin} - Added on {date}" for coin, date in watchlist.items()])
+
+
+# @mcp.resource("price://{symbol}")
+# async def get_current_price(symbol: str):
+#     """Get the current price of a specific cryptocurrency"""
+#     api_client = mcp.lifespan_context.api_client
+#     price_data = await api_client.get_current_price(symbol)
+    
+#     if not price_data:
+#         return f"Could not fetch price for {symbol}"
+    
+#     return (f"Current price for {symbol}: ${price_data['price']}\n"
+#             f"24h Change: {price_data['change_24h']}%\n"
+#             f"Last Updated: {price_data['last_updated']}")
+
+
+# @mcp.resource("price://{symbol}/history/{timeframe}")
+# async def get_price_history(symbol: str, timeframe: str):
+#     """Get historical price data for a cryptocurrency"""
+#     api_client = mcp.lifespan_context.api_client
+#     history = await api_client.get_price_history(symbol, timeframe)
+    
+#     if not history:
+#         return f"Could not fetch price history for {symbol} over {timeframe}"
+    
+#     # Format history data for display
+#     result = [f"Price history for {symbol} over {timeframe}:"]
+#     for entry in history:
+#         result.append(f"{entry['date']}: ${entry['price']}")
+    
+#     return "\n".join(result)
+
+
+# @mcp.resource("sheets://status")
+# async def get_sheets_status():
+#     """Get the status of Google Sheets integration"""
+#     sheets_client = mcp.lifespan_context.sheets_client
+    
+#     if not sheets_client:
+#         return "Google Sheets integration is not configured. Please set up credentials."
+    
+#     return (f"Google Sheets integration is active.\n"
+#             f"Connected to: {sheets_client.get_active_spreadsheet()}")
+
+
+# # === Tools ===
+
+@mcp.tool()
+def add_to_watchlist(symbol: str) -> str:
+    """Add a cryptocurrency to the watchlist"""
+    watchlist_manager = mcp.lifespan_context.watchlist_manager
+    
+    # Check if already in watchlist
+    if symbol in watchlist_manager.get_watchlist():
+        return f"{symbol} is already in your watchlist."
+    
+    # Add to watchlist
+    watchlist_manager.add_coin(symbol)
+    return f"Added {symbol} to your watchlist."
+
+
+# @mcp.tool()
+# def remove_from_watchlist(symbol: str) -> str:
+#     """Remove a cryptocurrency from the watchlist"""
+#     watchlist_manager = mcp.lifespan_context.watchlist_manager
+    
+#     # Check if in watchlist
+#     if symbol not in watchlist_manager.get_watchlist():
+#         return f"{symbol} is not in your watchlist."
+    
+#     # Remove from watchlist
+#     watchlist_manager.remove_coin(symbol)
+#     return f"Removed {symbol} from your watchlist."
+
+
+# @mcp.tool()
+# async def fetch_all_prices() -> str:
+#     """Fetch the latest prices for all coins in the watchlist"""
+#     watchlist_manager = mcp.lifespan_context.watchlist_manager
+#     api_client = mcp.lifespan_context.api_client
+    
+#     watchlist = watchlist_manager.get_watchlist()
+    
+#     if not watchlist:
+#         return "Your watchlist is empty. Add coins using the add_to_watchlist tool."
+    
+#     results = []
+#     for symbol in watchlist:
+#         price_data = await api_client.get_current_price(symbol)
+#         if price_data:
+#             results.append(f"{symbol}: ${price_data['price']} ({price_data['change_24h']}%)")
+#         else:
+#             results.append(f"{symbol}: Failed to fetch price")
+    
+#     return "Current prices:\n" + "\n".join(results)
+
+
+# @mcp.tool()
+# async def export_to_sheets(sheet_name: str) -> str:
+#     """Export all tracked price data to Google Sheets"""
+#     sheets_client = mcp.lifespan_context.sheets_client
+#     watchlist_manager = mcp.lifespan_context.watchlist_manager
+#     api_client = mcp.lifespan_context.api_client
+    
+#     if not sheets_client:
+#         return "Google Sheets integration is not configured. Please set up credentials."
+    
+#     watchlist = watchlist_manager.get_watchlist()
+    
+#     if not watchlist:
+#         return "Your watchlist is empty. Add coins using the add_to_watchlist tool."
+    
+#     # Prepare data for export
+#     export_data = []
+#     for symbol in watchlist:
+#         price_data = await api_client.get_current_price(symbol)
+#         if price_data:
+#             export_data.append({
+#                 'Symbol': symbol,
+#                 'Price': price_data['price'],
+#                 'Change_24h': price_data['change_24h'],
+#                 'Last_Updated': price_data['last_updated'],
+#                 'Added_On': watchlist[symbol]
+#             })
+    
+#     # Export to Google Sheets
+#     try:
+#         sheets_client.export_data(sheet_name, export_data)
+#         return f"Successfully exported price data to '{sheet_name}' sheet."
+#     except Exception as e:
+#         return f"Failed to export data: {str(e)}"
+
+
+# === Prompts ===
+
+@mcp.prompt()
+def add_coin_prompt(coin_symbol: str) -> str:
+    """Prompt template for adding a coin to the watchlist"""
+    return f"Please add {coin_symbol} to my watchlist and show me its current price."
+
+
+@mcp.prompt()
+def remove_coin_prompt(coin_symbol: str) -> str:
+    """Prompt template for removing a coin from the watchlist"""
+    return f"Please remove {coin_symbol} from my watchlist."
+
+
+@mcp.prompt()
+def get_prices_prompt() -> str:
+    """Prompt template for fetching all prices"""
+    return "Please fetch the latest prices for all cryptocurrencies in my watchlist."
+
+
+@mcp.prompt()
+def price_history_prompt(coin_symbol: str, timeframe: str) -> str:
+    """Prompt template for showing price history"""
+    return f"Please show me the price history for {coin_symbol} over the past {timeframe}."
+
+
+@mcp.prompt()
+def export_prompt(sheet_name: str) -> str:
+    """Prompt template for exporting to Google Sheets"""
+    return f"Please export all tracked price data to my Google Sheet '{sheet_name}'."
+
+
+if __name__ == "__main__":
+    # Run the MCP server
+    mcp.run(transport="streamable-http")
