@@ -16,17 +16,20 @@ from api_client import CryptoApiClient
 from sheets_client import GoogleSheetsClient
 from watchlist import WatchlistManager
 
+# AppContext class that binds application components
 @dataclass
 class AppContext:
     """Application context for lifespan management"""
+
     api_client: CryptoApiClient
     sheets_client: Optional[GoogleSheetsClient]
     watchlist_manager: WatchlistManager
 
-
+# app_lifespan context manager that initializes these components(services) and cleans them up
 @asynccontextmanager
 async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     """Manage application lifecycle with type-safe context"""
+
     # Initialize API client
     api_client = CryptoApiClient()
     
@@ -54,7 +57,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
             await sheets_client.close()
 
 # Create an MCP server instance
-mcp = FastMCP("Crypto Price Tracker", lifespan=app_lifespan)
+mcp = FastMCP("Crypto Price Tracker", lifespan_context=app_lifespan)
 
 # # === Resources ===
 
@@ -201,7 +204,36 @@ def add_to_watchlist(symbol: str) -> str:
 
 @mcp.prompt()
 def add_coin_prompt(coin_symbol: str) -> str:
-    """Prompt template for adding a coin to the watchlist"""
+    """
+    Generates a prompt to add a cryptocurrency to the user's watchlist and retrieve its current price.
+    
+    Args:
+        coin_symbol: The trading symbol of the cryptocurrency (e.g., 'BTC', 'ETH', 'SOL').
+                     Should be provided in uppercase without special characters.
+    
+    Returns:
+        A formatted prompt string requesting to add the specified coin to the watchlist
+        and display its current price.
+    
+    Raises:
+        ValueError: If coin_symbol is empty or contains invalid characters.
+    
+    Example:
+        add_coin_prompt('BTC') -> 'Please add BTC to my watchlist and show me its current price.'
+    """
+
+    # Validate required argument
+    if not coin_symbol:
+        raise ValueError("Coin symbol cannot be empty")
+
+    # Validate argument format
+    if not isinstance(coin_symbol, str) or not coin_symbol.strip():
+        raise ValueError("Coin symbol must be a non-empty string")
+    
+    # Standardize input format
+    coin_symbol = coin_symbol.strip().upper()
+
+    # Generate and return the formatted prompt
     return f"Please add {coin_symbol} to my watchlist and show me its current price."
 
 
