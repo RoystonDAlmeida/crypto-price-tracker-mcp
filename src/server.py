@@ -2,7 +2,8 @@
 Crypto Price Tracker MCP Server
 Main entry point for the MCP server implementation
 """
-from mcp.server.fastmcp import FastMCP
+
+from mcp.server.fastmcp import FastMCP, Context # Import Context
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -57,7 +58,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
             await sheets_client.close()
 
 # Create an MCP server instance
-mcp = FastMCP("Crypto Price Tracker", lifespan_context=app_lifespan)
+mcp = FastMCP("Crypto Price Tracker", lifespan=app_lifespan)
 
 # # === Resources ===
 
@@ -114,19 +115,71 @@ mcp = FastMCP("Crypto Price Tracker", lifespan_context=app_lifespan)
 
 # # === Tools ===
 
-@mcp.tool()
-def add_to_watchlist(symbol: str) -> str:
-    """Add a cryptocurrency to the watchlist"""
-    watchlist_manager = mcp.lifespan_context.watchlist_manager
+@mcp.tool(
+    annotations={
+        "title": "Add Cryptocurrency to Watchlist",
+        "readOnlyHint": False,
+        "destructiveHint": False,  # Modifies data but is not destructive
+        "idempotentHint": True,    # Adding the same coin twice has no additional effect
+        "openWorldHint": False     # Operating on internal watchlist, not external systems
+    }
+)
+def add_to_watchlist(symbol: str, ctx: Context) -> str: # Add ctx: Context parameter
+    """Add a cryptocurrency to the user's watchlist for price tracking.
     
-    # Check if already in watchlist
-    if symbol in watchlist_manager.get_watchlist():
-        return f"{symbol} is already in your watchlist."
+    This tool adds the specified cryptocurrency symbol to the user's watchlist
+    for ongoing price monitoring. If the symbol is already in the watchlist,
+    no action is taken.
     
-    # Add to watchlist
-    watchlist_manager.add_coin(symbol)
-    return f"Added {symbol} to your watchlist."
+    Args:
+        symbol: The trading symbol of the cryptocurrency (e.g., 'BTC', 'ETH', 'SOL').
+               Should be provided in uppercase without special characters.
+        ctx: The MCP Context object, automatically injected by FastMCP.
+    
+    Returns:
+        A confirmation message indicating the symbol was added or was already present.
+    
+    Examples:
+        > add_to_watchlist(symbol="BTC")
+        "Added BTC to your watchlist."
+        
+        > add_to_watchlist(symbol="ETH")  # When ETH is already in watchlist
+        "ETH is already in your watchlist."
+    """
+    
+    # Input validation
+    if not symbol:
+        return "Error: Symbol cannot be empty."
+    
+    if not isinstance(symbol, str):
+        return "Error: Symbol must be a string."
+    
+    # Standardize the input
+    symbol = symbol.strip().upper()
+    
+    try:
+        # Correctly access the AppContext instance from the injected ctx
+        app_context = ctx.request_context.lifespan_context
+        
+        # Type check for robustness, though FastMCP should provide the correct context
+        if not isinstance(app_context, AppContext):
+            # Log this issue if you have a logger
+            # print("Error: Application context is not an instance of AppContext.")
+            return "Error: Application context is not properly configured."
 
+        watchlist_manager = app_context.watchlist_manager
+        
+        # Check if already in watchlist
+        if symbol in watchlist_manager.get_watchlist():
+            return f"{symbol} is already in your watchlist."
+        
+        watchlist_manager.add_coin(symbol)
+        return f"Added {symbol} to your watchlist."
+    except AttributeError as e:
+        return f"Error accessing application component: {str(e)}. Ensure AppContext and lifespan are set up correctly."
+    except Exception as e:
+        # General error handling
+        return f"Error adding {symbol} to watchlist: {str(e)}"
 
 # @mcp.tool()
 # def remove_from_watchlist(symbol: str) -> str:
@@ -262,5 +315,6 @@ def export_prompt(sheet_name: str) -> str:
 
 
 if __name__ == "__main__":
+
     # Run the MCP server
-    mcp.run(transport="streamable-http")
+    mcp.run(transport="stdio")
