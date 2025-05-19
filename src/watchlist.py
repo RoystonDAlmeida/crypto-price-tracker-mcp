@@ -81,25 +81,26 @@ class WatchlistManager:
         """
         return self.watchlist
     
-    # def remove_coin(self, symbol: str) -> bool:
-    #     """
-    #     Remove a coin from the watchlist
+    def remove_coin(self, symbol: str) -> bool:
+        """
+        Remove a coin from the watchlist
         
-    #     Args:
-    #         symbol: The cryptocurrency symbol to remove
+        Args:
+            symbol: The cryptocurrency symbol to remove
             
-    #     Returns:
-    #         True if removal was successful, False otherwise
-    #     """
-    #     # Normalize symbol to uppercase
-    #     symbol = symbol.upper()
+        Returns:
+            True if removal was successful, False otherwise
+        """
         
-    #     # Remove from watchlist if present
-    #     if symbol in self.watchlist:
-    #         del self.watchlist[symbol]
-    #         return self._save_watchlist()
+        # Normalize symbol to uppercase
+        symbol = symbol.upper()
         
-    #     return False
+        # Remove from watchlist if present
+        if symbol in self.watchlist:
+            del self.watchlist[symbol]
+            return self._save_watchlist()
+        
+        return False
     
     # def is_in_watchlist(self, symbol: str) -> bool:
     #     """
