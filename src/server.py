@@ -181,19 +181,71 @@ def add_to_watchlist(symbol: str, ctx: Context) -> str: # Add ctx: Context param
         # General error handling
         return f"Error adding {symbol} to watchlist: {str(e)}"
 
-# @mcp.tool()
-# def remove_from_watchlist(symbol: str) -> str:
-#     """Remove a cryptocurrency from the watchlist"""
-#     watchlist_manager = mcp.lifespan_context.watchlist_manager
+@mcp.tool(
+    name="remove_from_watchlist",
+    description="Remove a cryptocurrency from the user's watchlist",
+    annotations={
+        "title": "Remove Crypto from Watchlist",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False 
+    }
+)
+def remove_from_watchlist(symbol: str, ctx: Context) -> str:
+    """Remove a cryptocurrency from the user's watchlist.
     
-#     # Check if in watchlist
-#     if symbol not in watchlist_manager.get_watchlist():
-#         return f"{symbol} is not in your watchlist."
+    This tool removes the specified cryptocurrency symbol from the user's watchlist.
+    If the symbol is not in the watchlist, no action is taken.
     
-#     # Remove from watchlist
-#     watchlist_manager.remove_coin(symbol)
-#     return f"Removed {symbol} from your watchlist."
+    Args:
+        symbol: The trading symbol of the cryptocurrency (e.g., 'BTC', 'ETH', 'SOL').
+               Should be provided in uppercase without special characters.
+        ctx: The MCP Context object, automatically injected by FastMCP.
+    
+    Returns:
+        A confirmation message indicating the symbol was removed or was not present.
+    
+    Examples:
+        > remove_from_watchlist(symbol="BTC")
+        "Removed BTC from your watchlist."
+        
+        > remove_from_watchlist(symbol="XRP")  # When XRP is not in watchlist
+        "XRP is not in your watchlist."
+    """
+    
+    # Input validation
+    if not symbol:
+        return "Error: Symbol cannot be empty."
+    
+    if not isinstance(symbol, str):
+        return "Error: Symbol must be a string."
+    
+    # Standardize the input
+    symbol = symbol.strip().upper()
+    
+    try:
+        # Correctly access the AppContext instance from the injected ctx
+        app_context = ctx.request_context.lifespan_context
+        
+        # Type check for robustness, though FastMCP should provide the correct context
+        if not isinstance(app_context, AppContext):
+            return "Error: Application context is not properly configured."
 
+        watchlist_manager = app_context.watchlist_manager
+        
+        # Check if in watchlist
+        if symbol not in watchlist_manager.get_watchlist():
+            return f"{symbol} is not in your watchlist."
+        
+        # Remove from watchlist
+        watchlist_manager.remove_coin(symbol)
+        return f"Removed {symbol} from your watchlist."
+    except AttributeError as e:
+        return f"Error accessing application component: {str(e)}. Ensure AppContext and lifespan are set up correctly."
+    except Exception as e:
+        # General error handling
+        return f"Error removing {symbol} from watchlist: {str(e)}"
 
 # @mcp.tool()
 # async def fetch_all_prices() -> str:
