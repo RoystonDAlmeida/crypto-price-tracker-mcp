@@ -116,6 +116,8 @@ mcp = FastMCP("Crypto Price Tracker", lifespan=app_lifespan)
 # # === Tools ===
 
 @mcp.tool(
+    name="add_to_watchlist",
+    description="Add a cryptocurrency to the user's watchlist",
     annotations={
         "title": "Add Cryptocurrency to Watchlist",
         "readOnlyHint": False,
@@ -307,7 +309,10 @@ def remove_from_watchlist(symbol: str, ctx: Context) -> str:
 
 # === Prompts ===
 
-@mcp.prompt()
+@mcp.prompt(
+    name="add_coin_prompt",
+    description="Generates a prompt to add a cryptocurrency to the user's watchlist and retrieve its current price."
+)
 def add_coin_prompt(coin_symbol: str) -> str:
     """
     Generates a prompt to add a cryptocurrency to the user's watchlist and retrieve its current price.
@@ -342,11 +347,41 @@ def add_coin_prompt(coin_symbol: str) -> str:
     return f"Please add {coin_symbol} to my watchlist and show me its current price."
 
 
-@mcp.prompt()
+@mcp.prompt(
+    name = "remove_coin_prompt",
+    description="Generates a prompt to remove a cryptocurrency from the user's watchlist."
+)
 def remove_coin_prompt(coin_symbol: str) -> str:
-    """Prompt template for removing a coin from the watchlist"""
+    """
+    Generates a prompt to remove a cryptocurrency from the user's watchlist.
+    
+    Args:
+        coin_symbol: The trading symbol of the cryptocurrency (e.g., 'BTC', 'ETH', 'SOL').
+                   Should be provided in uppercase without special characters.
+    
+    Returns:
+        A formatted prompt string requesting to remove the specified coin from the watchlist.
+    
+    Raises:
+        ValueError: If coin_symbol is empty or contains invalid characters.
+    
+    Example:
+        remove_coin_prompt('BTC') -> 'Please remove BTC from my watchlist.'
+    """
+    
+    # Validate required argument
+    if not coin_symbol:
+        raise ValueError("Coin symbol cannot be empty")
+    
+    # Validate argument format
+    if not isinstance(coin_symbol, str) or not coin_symbol.strip():
+        raise ValueError("Coin symbol must be a non-empty string")
+        
+    # Standardize input format
+    coin_symbol = coin_symbol.strip().upper()
+    
+    # Generate and return the formatted prompt
     return f"Please remove {coin_symbol} from my watchlist."
-
 
 @mcp.prompt()
 def get_prices_prompt() -> str:
