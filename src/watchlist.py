@@ -25,7 +25,7 @@ class WatchlistManager:
         Load watchlist from storage file
         
         Returns:
-            Dictionary mapping coin symbols to date added
+            Dictionary mapping coin ids to date added
         """
         if not os.path.exists(self.storage_file):
             return {}
@@ -37,22 +37,22 @@ class WatchlistManager:
             print(f"Error loading watchlist: {e}")
             return {}
 
-    def add_coin(self, symbol: str) -> bool:
+    def add_coin(self, id: str) -> bool:
         """
         Add a coin to the watchlist
         
         Args:
-            symbol: The cryptocurrency symbol to add
+            id: The cryptocurrency id to add
             
         Returns:
             True if addition was successful, False otherwise
         """
-        # Normalize symbol to uppercase
-        symbol = symbol.upper()
+        # Normalize id to uppercase
+        id = id.lower()
         
         # Add to watchlist if not already present
-        if symbol not in self.watchlist:
-            self.watchlist[symbol] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if id not in self.watchlist:
+            self.watchlist[id] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             return self._save_watchlist()
         
         return True
@@ -64,6 +64,7 @@ class WatchlistManager:
         Returns:
             True if save was successful, False otherwise
         """
+
         try:
             with open(self.storage_file, 'w') as f:
                 json.dump(self.watchlist, f, indent=2)
@@ -77,27 +78,28 @@ class WatchlistManager:
         Get the current watchlist
         
         Returns:
-            Dictionary mapping coin symbols to date added
+            Dictionary mapping coin ids to date added
         """
+
         return self.watchlist
     
-    def remove_coin(self, symbol: str) -> bool:
+    def remove_coin(self, id: str) -> bool:
         """
         Remove a coin from the watchlist
         
         Args:
-            symbol: The cryptocurrency symbol to remove
+            symbol: The cryptocurrency id to remove
             
         Returns:
             True if removal was successful, False otherwise
         """
         
-        # Normalize symbol to uppercase
-        symbol = symbol.upper()
+        # Normalize id to lowercase
+        id = id.lower()
         
         # Remove from watchlist if present
-        if symbol in self.watchlist:
-            del self.watchlist[symbol]
+        if id in self.watchlist:
+            del self.watchlist[id]
             return self._save_watchlist()
         
         return False
