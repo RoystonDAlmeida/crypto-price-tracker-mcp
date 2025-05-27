@@ -126,7 +126,7 @@ mcp = FastMCP("Crypto Price Tracker", lifespan=app_lifespan)
         "openWorldHint": False     # Operating on internal watchlist, not external systems
     }
 )
-def add_to_watchlist(symbol: str, ctx: Context) -> str: # Add ctx: Context parameter
+def add_to_watchlist(id: str, ctx: Context) -> str: # Add ctx: Context parameter
     """Add a cryptocurrency to the user's watchlist for price tracking.
     
     This tool adds the specified cryptocurrency symbol to the user's watchlist
@@ -134,30 +134,29 @@ def add_to_watchlist(symbol: str, ctx: Context) -> str: # Add ctx: Context param
     no action is taken.
     
     Args:
-        symbol: The trading symbol of the cryptocurrency (e.g., 'BTC', 'ETH', 'SOL').
-               Should be provided in uppercase without special characters.
+        symbol: The id of the cryptocurrency(Eg: "bitcoin", "ethereum", "osmosis-allbtc")
         ctx: The MCP Context object, automatically injected by FastMCP.
     
     Returns:
-        A confirmation message indicating the symbol was added or was already present.
+        A confirmation message indicating the id was added or was already present.
     
     Examples:
-        > add_to_watchlist(symbol="BTC")
-        "Added BTC to your watchlist."
+        > add_to_watchlist(id="bitcoin")
+        "Added bitcoin to your watchlist."
         
-        > add_to_watchlist(symbol="ETH")  # When ETH is already in watchlist
-        "ETH is already in your watchlist."
+        > add_to_watchlist(symbol="ethereum")  # When ethereum is already in watchlist
+        "ethereum is already in your watchlist."
     """
     
     # Input validation
-    if not symbol:
-        return "Error: Symbol cannot be empty."
+    if not id:
+        return "Error: id cannot be empty."
     
-    if not isinstance(symbol, str):
-        return "Error: Symbol must be a string."
+    if not isinstance(id, str):
+        return "Error: id must be a string."
     
-    # Standardize the input
-    symbol = symbol.strip().upper()
+    # Standardize the input("Bitcoin" -> "bitcoin")
+    id = id.strip().lower()
     
     try:
         # Correctly access the AppContext instance from the injected ctx
@@ -172,16 +171,16 @@ def add_to_watchlist(symbol: str, ctx: Context) -> str: # Add ctx: Context param
         watchlist_manager = app_context.watchlist_manager
         
         # Check if already in watchlist
-        if symbol in watchlist_manager.get_watchlist():
-            return f"{symbol} is already in your watchlist."
+        if id in watchlist_manager.get_watchlist():
+            return f"{id} is already in your watchlist."
         
-        watchlist_manager.add_coin(symbol)
-        return f"Added {symbol} to your watchlist."
+        watchlist_manager.add_coin(id)
+        return f"Added {id} to your watchlist."
     except AttributeError as e:
         return f"Error accessing application component: {str(e)}. Ensure AppContext and lifespan are set up correctly."
     except Exception as e:
         # General error handling
-        return f"Error adding {symbol} to watchlist: {str(e)}"
+        return f"Error adding {id} to watchlist: {str(e)}"
 
 @mcp.tool(
     name="remove_from_watchlist",
@@ -194,37 +193,36 @@ def add_to_watchlist(symbol: str, ctx: Context) -> str: # Add ctx: Context param
         "openWorldHint": False 
     }
 )
-def remove_from_watchlist(symbol: str, ctx: Context) -> str:
+def remove_from_watchlist(id: str, ctx: Context) -> str:
     """Remove a cryptocurrency from the user's watchlist.
     
     This tool removes the specified cryptocurrency symbol from the user's watchlist.
     If the symbol is not in the watchlist, no action is taken.
     
     Args:
-        symbol: The trading symbol of the cryptocurrency (e.g., 'BTC', 'ETH', 'SOL').
-               Should be provided in uppercase without special characters.
+        id: The id of the cryptocurrency(Eg: "bitcoin", "ethereum", "osmosis-allbtc"))
         ctx: The MCP Context object, automatically injected by FastMCP.
     
     Returns:
         A confirmation message indicating the symbol was removed or was not present.
     
     Examples:
-        > remove_from_watchlist(symbol="BTC")
-        "Removed BTC from your watchlist."
+        > remove_from_watchlist(symbol="bitcoin")
+        "Removed bitcoin from your watchlist."
         
-        > remove_from_watchlist(symbol="XRP")  # When XRP is not in watchlist
-        "XRP is not in your watchlist."
+        > remove_from_watchlist(symbol="xrp")  # When XRP is not in watchlist
+        "xrp is not in your watchlist."
     """
     
     # Input validation
-    if not symbol:
-        return "Error: Symbol cannot be empty."
+    if not id:
+        return "Error: id cannot be empty."
     
-    if not isinstance(symbol, str):
-        return "Error: Symbol must be a string."
+    if not isinstance(id, str):
+        return "Error: id must be a string."
     
     # Standardize the input
-    symbol = symbol.strip().upper()
+    id = id.strip().lower()
     
     try:
         # Correctly access the AppContext instance from the injected ctx
@@ -237,38 +235,74 @@ def remove_from_watchlist(symbol: str, ctx: Context) -> str:
         watchlist_manager = app_context.watchlist_manager
         
         # Check if in watchlist
-        if symbol not in watchlist_manager.get_watchlist():
-            return f"{symbol} is not in your watchlist."
+        if id not in watchlist_manager.get_watchlist():
+            return f"{id} is not in your watchlist."
         
         # Remove from watchlist
-        watchlist_manager.remove_coin(symbol)
-        return f"Removed {symbol} from your watchlist."
+        watchlist_manager.remove_coin(id)
+        return f"Removed {id} from your watchlist."
     except AttributeError as e:
         return f"Error accessing application component: {str(e)}. Ensure AppContext and lifespan are set up correctly."
     except Exception as e:
         # General error handling
-        return f"Error removing {symbol} from watchlist: {str(e)}"
+        return f"Error removing {id} from watchlist: {str(e)}"
 
-# @mcp.tool()
-# async def fetch_all_prices() -> str:
-#     """Fetch the latest prices for all coins in the watchlist"""
-#     watchlist_manager = mcp.lifespan_context.watchlist_manager
-#     api_client = mcp.lifespan_context.api_client
+@mcp.tool(
+        name="fetch_prices",
+        description="Fetch the latest prices for all coins in the watchlist",
+        annotations = {
+            "title": "Fetch Prices",
+            "readOnlyHint": "False",
+            "destuctiveHint": "False",
+            "idemptotentHint": "True",
+            "openWorldHint": "True" # Interacting with CoinGecko API service
+        }
+)
+async def fetch_all_prices(ctx: Context) -> str:
+    """ Fetch the latest prices for all coins in the watchlist
+
+        This tool fetches the current prices for all cryptos in the watchlist.
+        If the watchlist is empty, the tool returns a message indicating that the watchlist is empty.
+
+        Args:
+            ctx: The MCP Context object, automatically injected by FastMCP.
+
+        Returns:
+            A string containing the current prices for all cryptos in the watchlist.
+
+        Examples:
+            > fetch_all_prices()
+            "Current prices:\nbitcoin: $49,000.00 (0.00%)\nethereum: $2,500.00 (0.00%)"
+    """
+
+    try:
+        # Correctly access the AppContext instance from the injected ctx
+        app_context = ctx.request_context.lifespan_context
+        
+        # Type check for robustness, though FastMCP should provide the correct context
+        if not isinstance(app_context, AppContext):
+            return "Error: Application context is not properly configured."
+        
+        watchlist_manager = app_context.watchlist_manager
+        watchlist = watchlist_manager.get_watchlist()
+
+        api_client = app_context.api_client
     
-#     watchlist = watchlist_manager.get_watchlist()
+        if not watchlist:
+            return "Your watchlist is empty. Add coins using the add_to_watchlist tool."
     
-#     if not watchlist:
-#         return "Your watchlist is empty. Add coins using the add_to_watchlist tool."
+        results = []
+        for id in watchlist:
+            price_data = await api_client.get_current_price(id)
+            if price_data:
+                results.append(f"{id}: ${price_data['price']} ({price_data['change_24h']}%)")
+            else:
+                results.append(f"{id}: Failed to fetch price")
+        
+        return "Current prices:\n" + "\n".join(results)
     
-#     results = []
-#     for symbol in watchlist:
-#         price_data = await api_client.get_current_price(symbol)
-#         if price_data:
-#             results.append(f"{symbol}: ${price_data['price']} ({price_data['change_24h']}%)")
-#         else:
-#             results.append(f"{symbol}: Failed to fetch price")
-    
-#     return "Current prices:\n" + "\n".join(results)
+    except Exception as e:
+        return f"Error fetching prices: {str(e)}"
 
 
 # @mcp.tool()
@@ -383,11 +417,22 @@ def remove_coin_prompt(coin_symbol: str) -> str:
     # Generate and return the formatted prompt
     return f"Please remove {coin_symbol} from my watchlist."
 
-@mcp.prompt()
+@mcp.prompt(
+    name = "get_prices_prompt",
+    description="Generates a prompt to fetch the latest prices for all cryptocurrencies in the user's watchlist."
+)
 def get_prices_prompt() -> str:
-    """Prompt template for fetching all prices"""
-    return "Please fetch the latest prices for all cryptocurrencies in my watchlist."
+    """
+    Generates a prompt to fetch the latest prices for all cryptocurrencies in the user's watchlist.
+    
+    Returns:
+        A formatted prompt string requesting to fetch all cryptocurrency prices from the watchlist.
+    
+    Example:
+        get_prices_prompt() -> 'Please fetch the latest prices for all cryptocurrencies in my watchlist.'
+    """
 
+    return "Please fetch the latest prices for all cryptocurrencies in my watchlist."
 
 @mcp.prompt()
 def price_history_prompt(coin_symbol: str, timeframe: str) -> str:
