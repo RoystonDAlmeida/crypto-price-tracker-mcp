@@ -60,15 +60,56 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
 # Create an MCP server instance
 mcp = FastMCP("Crypto Price Tracker", lifespan=app_lifespan)
 
-# # === Resources ===
+# === Resources ===
 
-# @mcp.resource("watchlist://all")
-# async def get_watchlist():
-#     """Get the current watchlist of tracked cryptocurrencies"""
-#     # Access lifespan context directly from the MCP object
-#     watchlist = mcp.lifespan_context.watchlist_manager.get_watchlist()
-#     return "\n".join([f"{coin} - Added on {date}" for coin, date in watchlist.items()])
+@mcp.tool(
+    name = "get_watchlist",
+    description = "Get the current watchlist of tracked cryptocurrencies",
+    annotations = {
+        "title": "Get Watchlist",
+        "readOnlyHint": "True", # Fetched data is read only
+        "destuctiveHint": "False",
+        "idemptotentHint": "True",
+        "openWorldHint": "False"
+    }
+)
+async def get_watchlist(ctx: Context):
+    """
+    Get the current watchlist of tracked cryptocurrencies
 
+    Args:
+        ctx: The MCP Context object.
+
+    Returns:
+        A string containing the current watchlist of tracked cryptocurrencies.
+    """
+
+    try:
+        # Correctly access the AppContext instance from the injected ctx
+        app_context = ctx.request_context.lifespan_context
+        
+        # Type check for robustness, though FastMCP should provide the correct context
+        if not isinstance(app_context, AppContext):
+            return "Error: Application context is not properly configured."
+        
+        watchlist_manager = app_context.watchlist_manager
+        watchlist_data = watchlist_manager.get_watchlist()
+
+        if not watchlist_data:
+            return "Your watchlist is empty."
+
+        output_lines = ["Current Watchlist:"]
+        for coin, date_added_str in watchlist_data.items():
+            # Parse the stored date string
+            dt_object = datetime.strptime(date_added_str, '%Y-%m-%d %H:%M:%S')
+            
+            # Format it to dd-mm-yyyy
+            formatted_date = dt_object.strftime('%d-%m-%Y')
+            output_lines.append(f"- {coin} (Added on: {formatted_date})")
+        return "\n".join(output_lines)
+    
+    except Exception as e:
+        return f"Error fetching watchlist: {str(e)}"
 
 # @mcp.resource("price://{symbol}")
 # async def get_current_price(symbol: str):
@@ -82,24 +123,6 @@ mcp = FastMCP("Crypto Price Tracker", lifespan=app_lifespan)
 #     return (f"Current price for {symbol}: ${price_data['price']}\n"
 #             f"24h Change: {price_data['change_24h']}%\n"
 #             f"Last Updated: {price_data['last_updated']}")
-
-
-# @mcp.resource("price://{symbol}/history/{timeframe}")
-# async def get_price_history(symbol: str, timeframe: str):
-#     """Get historical price data for a cryptocurrency"""
-#     api_client = mcp.lifespan_context.api_client
-#     history = await api_client.get_price_history(symbol, timeframe)
-    
-#     if not history:
-#         return f"Could not fetch price history for {symbol} over {timeframe}"
-    
-#     # Format history data for display
-#     result = [f"Price history for {symbol} over {timeframe}:"]
-#     for entry in history:
-#         result.append(f"{entry['date']}: ${entry['price']}")
-    
-#     return "\n".join(result)
-
 
 # @mcp.resource("sheets://status")
 # async def get_sheets_status():
@@ -412,7 +435,7 @@ def remove_coin_prompt(coin_symbol: str) -> str:
         raise ValueError("Coin symbol must be a non-empty string")
         
     # Standardize input format
-    coin_symbol = coin_symbol.strip().upper()
+    coin_symbol = coin_symbol.strip().lower()
     
     # Generate and return the formatted prompt
     return f"Please remove {coin_symbol} from my watchlist."
@@ -433,12 +456,6 @@ def get_prices_prompt() -> str:
     """
 
     return "Please fetch the latest prices for all cryptocurrencies in my watchlist."
-
-@mcp.prompt()
-def price_history_prompt(coin_symbol: str, timeframe: str) -> str:
-    """Prompt template for showing price history"""
-    return f"Please show me the price history for {coin_symbol} over the past {timeframe}."
-
 
 @mcp.prompt()
 def export_prompt(sheet_name: str) -> str:
