@@ -138,7 +138,7 @@ class CryptoApiClient:
                     "change_24h": data["market_data"].get("price_change_percentage_24h"),
                     "last_updated": data.get("last_updated"),
                     "name": data.get("name", coin_id_to_use),
-                    "symbol": data.get("symbol", id).upper() # Fallback to original input symbol if not in response
+                    "symbol": data.get("symbol", id)
                 }
                 # Update cache
                 self.cache[cache_key] = {
