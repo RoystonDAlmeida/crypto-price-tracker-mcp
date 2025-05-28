@@ -34,13 +34,23 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     # Initialize API client
     api_client = CryptoApiClient()
     
-    # Initialize Google Sheets client if credentials are available
+    # Initialize Google Sheets client
     sheets_client = None
-    if os.path.exists("credentials.json"):
+    credentials_path = os.getenv("GOOGLE_CREDENTIALS_PATH", "google_credentials.json")
+    if os.path.exists(credentials_path):
         try:
-            sheets_client = GoogleSheetsClient("credentials.json")
+            client_instance = GoogleSheetsClient(credentials_file=credentials_path)
+            if client_instance.service:
+                # Check if the service was initialised successfully
+                sheets_client = client_instance
+                print(f"Google Sheets client initialized successfully using {credentials_path}.")
+            else:
+                # GoogleSheetsClient._initialize_service already prints an error message
+               print(f"Failed to initialize Google Sheets service using {credentials_path}. The service attribute was not set. Check logs from GoogleSheetsClient.")
         except Exception as e:
-            print(f"Failed to initialize Google Sheets client: {e}")
+            print(f"Exception occurred during GoogleSheetsClient instantiation or service initialization with {credentials_path}: {e}")
+    else:
+        print(f"Google Sheets credentials file not found at '{credentials_path}'. Sheets client will not be available.")
     
     # Initialize watchlist manager
     watchlist_manager = WatchlistManager()
@@ -60,7 +70,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
 # Create an MCP server instance
 mcp = FastMCP("Crypto Price Tracker", lifespan=app_lifespan)
 
-# === Resources ===
+# # === Tools ===
 
 @mcp.tool(
     name = "get_watchlist",
@@ -102,7 +112,7 @@ async def get_watchlist(ctx: Context):
         for coin, date_added_str in watchlist_data.items():
             # Parse the stored date string
             dt_object = datetime.strptime(date_added_str, '%Y-%m-%d %H:%M:%S')
-            
+
             # Format it to dd-mm-yyyy
             formatted_date = dt_object.strftime('%d-%m-%Y')
             output_lines.append(f"- {coin} (Added on: {formatted_date})")
@@ -110,33 +120,6 @@ async def get_watchlist(ctx: Context):
     
     except Exception as e:
         return f"Error fetching watchlist: {str(e)}"
-
-# @mcp.resource("price://{symbol}")
-# async def get_current_price(symbol: str):
-#     """Get the current price of a specific cryptocurrency"""
-#     api_client = mcp.lifespan_context.api_client
-#     price_data = await api_client.get_current_price(symbol)
-    
-#     if not price_data:
-#         return f"Could not fetch price for {symbol}"
-    
-#     return (f"Current price for {symbol}: ${price_data['price']}\n"
-#             f"24h Change: {price_data['change_24h']}%\n"
-#             f"Last Updated: {price_data['last_updated']}")
-
-# @mcp.resource("sheets://status")
-# async def get_sheets_status():
-#     """Get the status of Google Sheets integration"""
-#     sheets_client = mcp.lifespan_context.sheets_client
-    
-#     if not sheets_client:
-#         return "Google Sheets integration is not configured. Please set up credentials."
-    
-#     return (f"Google Sheets integration is active.\n"
-#             f"Connected to: {sheets_client.get_active_spreadsheet()}")
-
-
-# # === Tools ===
 
 @mcp.tool(
     name="add_to_watchlist",
@@ -327,42 +310,63 @@ async def fetch_all_prices(ctx: Context) -> str:
     except Exception as e:
         return f"Error fetching prices: {str(e)}"
 
+@mcp.tool()
+async def export_to_sheets(sheet_name: str, user_email: str, ctx: Context) -> str:
+    """ Export all tracked price data to Google Sheets
 
-# @mcp.tool()
-# async def export_to_sheets(sheet_name: str) -> str:
-#     """Export all tracked price data to Google Sheets"""
-#     sheets_client = mcp.lifespan_context.sheets_client
-#     watchlist_manager = mcp.lifespan_context.watchlist_manager
-#     api_client = mcp.lifespan_context.api_client
-    
-#     if not sheets_client:
-#         return "Google Sheets integration is not configured. Please set up credentials."
-    
-#     watchlist = watchlist_manager.get_watchlist()
-    
-#     if not watchlist:
-#         return "Your watchlist is empty. Add coins using the add_to_watchlist tool."
-    
-#     # Prepare data for export
-#     export_data = []
-#     for symbol in watchlist:
-#         price_data = await api_client.get_current_price(symbol)
-#         if price_data:
-#             export_data.append({
-#                 'Symbol': symbol,
-#                 'Price': price_data['price'],
-#                 'Change_24h': price_data['change_24h'],
-#                 'Last_Updated': price_data['last_updated'],
-#                 'Added_On': watchlist[symbol]
-#             })
-    
-#     # Export to Google Sheets
-#     try:
-#         sheets_client.export_data(sheet_name, export_data)
-#         return f"Successfully exported price data to '{sheet_name}' sheet."
-#     except Exception as e:
-#         return f"Failed to export data: {str(e)}"
+        Args:
+            sheet_name: The name of the sheet (and spreadsheet) to create/use.
+            user_email: The Google email address to share the spreadsheet with.
+            ctx: The MCP Context object.
+    """
 
+    try:
+        app_context = ctx.request_context.lifespan_context
+        
+        if not isinstance(app_context, AppContext):
+            return "Error: Application context is not properly configured."
+
+        sheets_client = app_context.sheets_client
+        if not sheets_client:
+            return "Google Sheets integration is not configured. Please set up credentials."
+
+        watchlist_manager = app_context.watchlist_manager
+        watchlist = watchlist_manager.get_watchlist()
+        
+        if not watchlist:
+            return "Your watchlist is empty. Add coins using the add_to_watchlist tool."
+        
+        api_client = app_context.api_client
+        
+        # Prepare data for export
+        export_data = []
+        for coin_id, date_modified in watchlist.items():
+            price_data = await api_client.get_current_price(coin_id)
+            if price_data:
+                export_data.append({
+                    'Symbol': price_data['symbol'],
+                    'Id': coin_id,
+                    'Name': price_data['name'],
+                    'Price': price_data['price'],
+                    'Change_24h': price_data['change_24h'],
+                    'Last_Updated': price_data['last_updated'],
+                    'Added_On': watchlist[coin_id]
+                })
+        
+        # Export to Google Sheets
+        success = sheets_client.export_data(sheet_name, export_data, user_email_to_share=user_email)
+        
+        if success:
+            spreadsheet_url = sheets_client.get_spreadsheet_url()
+            if spreadsheet_url:
+                return f"Successfully exported price data to '{sheet_name}' sheet.\nURL: {spreadsheet_url}"
+            else:
+                return f"Successfully exported price data to '{sheet_name}' sheet."
+        else:
+            return "Failed to export data to Google Sheets."
+            
+    except Exception as e:
+        return f"Error exporting to Google Sheets: {str(e)}"
 
 # === Prompts ===
 
@@ -458,10 +462,15 @@ def get_prices_prompt() -> str:
     return "Please fetch the latest prices for all cryptocurrencies in my watchlist."
 
 @mcp.prompt()
-def export_prompt(sheet_name: str) -> str:
-    """Prompt template for exporting to Google Sheets"""
-    return f"Please export all tracked price data to my Google Sheet '{sheet_name}'."
+def export_prompt(sheet_name: str, user_email: str) -> str:
+    """
+    Prompt template for exporting to Google Sheets and sharing it.
+    Args:
+        sheet_name: The desired name for the Google Sheet.
+        user_email: The email address to share the sheet with.
+    """
 
+    return f"Please export all tracked price data to my Google Sheet '{sheet_name}' and share it with {user_email}."
 
 if __name__ == "__main__":
 
