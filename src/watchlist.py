@@ -6,7 +6,6 @@ from typing import Dict, List, Optional
 import json
 import os
 
-
 class WatchlistManager:
     """Manager for cryptocurrency watchlist"""
     
@@ -103,51 +102,3 @@ class WatchlistManager:
             return self._save_watchlist()
         
         return False
-    
-    # def is_in_watchlist(self, symbol: str) -> bool:
-    #     """
-    #     Check if a coin is in the watchlist
-        
-    #     Args:
-    #         symbol: The cryptocurrency symbol to check
-            
-    #     Returns:
-    #         True if coin is in watchlist, False otherwise
-    #     """
-    #     # Normalize symbol to uppercase
-    #     symbol = symbol.upper()
-        
-    #     return symbol in self.watchlist
-    
-    # def clear_watchlist(self) -> bool:
-    #     """
-    #     Clear the entire watchlist
-        
-    #     Returns:
-    #         True if clearing was successful, False otherwise
-    #     """
-    #     self.watchlist = {}
-    #     return self._save_watchlist()
-    
-    # def import_from_list(self, symbols: List[str]) -> int:
-    #     """
-    #     Import multiple coins into the watchlist
-        
-    #     Args:
-    #         symbols: List of cryptocurrency symbols to add
-            
-    #     Returns:
-    #         Number of coins added
-    #     """
-    #     count = 0
-        
-    #     for symbol in symbols:
-    #         symbol = symbol.upper()
-    #         if symbol not in self.watchlist:
-    #             self.watchlist[symbol] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    #             count += 1
-        
-    #     if count > 0:
-    #         self._save_watchlist()
-        
-    #     return count
