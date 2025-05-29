@@ -31,8 +31,8 @@ class GoogleSheetsClient:
         
         # Define the scope for Google Sheets API
         self.scopes = [
-            os.getenv('GOOGLE_SHEETS_API_PATH'),
-            os.getenv('GOOGLE_DRIVE_API_PATH')
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive.file'
         ]
         
         # Initialize the service if credentials are provided
@@ -205,7 +205,116 @@ class GoogleSheetsClient:
                 body=body
             ).execute()
             
-            print(f"Successfully exported {len(data)} rows to Google Sheets")
+            print(f"Successfully exported {len(data)} rows to Google Sheets. Applying formatting...")
+
+            # Apply formatting
+            # Assuming the data is always written to 'Sheet1', which typically has sheetId 0
+            # For a more robust solution, you might fetch the sheetId dynamically.
+            sheet_id = 0 # Default sheetId for the first sheet
+            
+            formatting_requests = []
+
+            # 1. Bold headers
+            formatting_requests.append({
+                "repeatCell": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": 0, # Header row
+                        "endRowIndex": 1
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "textFormat": {"bold": True}
+                        }
+                    },
+                    "fields": "userEnteredFormat.textFormat.bold"
+                }
+            })
+
+            # Find column indices for specific formatting
+            price_col_index = -1
+            change_24h_col_index = -1
+            try:
+                if 'Price' in headers:
+                    price_col_index = headers.index('Price')
+                if 'Change_24h' in headers:
+                    change_24h_col_index = headers.index('Change_24h')
+            except ValueError:
+                print("Warning: Could not find 'Price' or 'Change_24h' column for specific formatting.")
+
+            # 2. Currency format for 'Price' column
+            if price_col_index != -1:
+                formatting_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": 1, # Data rows
+                            "startColumnIndex": price_col_index,
+                            "endColumnIndex": price_col_index + 1
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "numberFormat": {"type": "CURRENCY", "pattern": "$#,##0.00"}
+                            }
+                        },
+                        "fields": "userEnteredFormat.numberFormat"
+                    }
+                })
+
+            # 3. Number format and Conditional formatting for 'Change_24h' column
+            if change_24h_col_index != -1:
+                # Number format (e.g., -0.27%)
+                formatting_requests.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": 1, # Data rows
+                            "startColumnIndex": change_24h_col_index,
+                            "endColumnIndex": change_24h_col_index + 1
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "numberFormat": {"type": "NUMBER", "pattern": "0.00\"%\""}
+                            }
+                        },
+                        "fields": "userEnteredFormat.numberFormat"
+                    }
+                })
+                # Conditional formatting for positive values (green text)
+                formatting_requests.append({
+                    "addConditionalFormatRule": {
+                        "rule": {
+                            "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "startColumnIndex": change_24h_col_index, "endColumnIndex": change_24h_col_index + 1}],
+                            "booleanRule": {
+                                "condition": {"type": "NUMBER_GREATER", "values": [{"userEnteredValue": "0"}]},
+                                "format": {"textFormat": {"foregroundColor": {"red": 0.0, "green": 0.6, "blue": 0.0}}} # Dark Green
+                            }
+                        }, "index": 0
+                    }
+                })
+                # Conditional formatting for negative values (red text)
+                formatting_requests.append({
+                    "addConditionalFormatRule": {
+                        "rule": {
+                            "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "startColumnIndex": change_24h_col_index, "endColumnIndex": change_24h_col_index + 1}],
+                            "booleanRule": {
+                                "condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": "0"}]},
+                                "format": {"textFormat": {"foregroundColor": {"red": 0.8, "green": 0.0, "blue": 0.0}}} # Dark Red
+                            }
+                        }, "index": 1
+                    }
+                })
+
+            if formatting_requests:
+                try:
+                    self.service.spreadsheets().batchUpdate(
+                        spreadsheetId=spreadsheet_id,
+                        body={"requests": formatting_requests}
+                    ).execute()
+                    print("Successfully applied formatting to the sheet.")
+                except HttpError as e:
+                    print(f"Error applying formatting: {e}")
+            
             return True
             
         except HttpError as e:
