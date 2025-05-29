@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 import os
 from datetime import datetime, timezone
+import asyncio # Added for asyncio.to_thread
 from typing import Dict, List, Optional
 
 # Import modules for different components
@@ -310,9 +311,20 @@ async def fetch_all_prices(ctx: Context) -> str:
     except Exception as e:
         return f"Error fetching prices: {str(e)}"
 
-@mcp.tool()
+@mcp.tool(
+        name="export_to_sheets",
+        description="Export all tracked price data to Google Sheets",
+        annotations = { 
+            "title": "Export to Google Sheets",
+            "readOnlyHint": "False",
+            "destuctiveHint": "True",
+            "idemptotentHint": "True",
+            "openWorldHint": "True" # Interacting with Google Sheets
+        }
+)
 async def export_to_sheets(sheet_name: str, user_email: str, ctx: Context) -> str:
     """ Export all tracked price data to Google Sheets
+
 
         Args:
             sheet_name: The name of the sheet (and spreadsheet) to create/use.
@@ -385,6 +397,99 @@ async def export_to_sheets(sheet_name: str, user_email: str, ctx: Context) -> st
             
     except Exception as e:
         return f"Error exporting to Google Sheets: {str(e)}"
+
+# === Analyze Sheet Performance ===
+@mcp.tool(
+    name="get_sheet_performance_leaders",
+    description="Identifies cryptocurrencies with the highest gain and highest loss from a Google Sheet based on 'Change_24h'.",
+    annotations={
+        "title": "Get Performance Leaders from Sheet",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True # Interacting with Google Sheets
+    }
+)
+async def get_sheet_performance_leaders(sheet_name: str, ctx: Context) -> str:
+    """
+    Identifies the cryptocurrencies from the specified Google Sheet
+    that had the highest gain and highest loss based on the 'Change_24h' column.
+    Assumes the sheet was created by the 'export_to_sheets' tool.
+
+    Args:
+        sheet_name: The name of the Google Sheet to analyze.
+        ctx: The MCP Context object.
+
+    Returns:
+        A string summarizing the best and worst performers, or an error message.
+    """
+    try:
+        app_context = ctx.request_context.lifespan_context
+        if not isinstance(app_context, AppContext):
+            return "Error: Application context is not properly configured."
+
+        sheets_client = app_context.sheets_client
+        if not sheets_client or not sheets_client.service:
+            return "Google Sheets integration is not configured or not initialized. Please set up credentials."
+
+        # Find the spreadsheet ID using the new method (run sync method in thread)
+        spreadsheet_id = await asyncio.to_thread(sheets_client.find_spreadsheet_by_title, sheet_name)
+        if not spreadsheet_id:
+            return f"Error: Could not find Google Sheet named '{sheet_name}'. Ensure it has been created/shared correctly."
+
+        # Read data from the sheet (run sync method in thread)
+        # Assumes data is in 'Sheet1' and includes headers.
+        raw_data = await asyncio.to_thread(sheets_client.read_sheet_data, spreadsheet_id, 'Sheet1!A:Z')
+
+        if not raw_data or len(raw_data) < 2: # Need header + at least one data row
+            return f"No data or insufficient data found in sheet '{sheet_name}'. The sheet might be empty or improperly formatted."
+
+        header = raw_data[0]
+        data_rows = raw_data[1:]
+
+        try:
+            # Determine column for coin identification (Id, Symbol, or Name)
+            id_col_name = next((col for col in ['Id', 'Symbol', 'Name'] if col in header), None)
+            if not id_col_name:
+                 return "Error: Could not find a suitable identifier column (Id, Symbol, or Name) in the sheet header."
+            id_col_index = header.index(id_col_name)
+            change_col_index = header.index('Change_24h')
+        except ValueError:
+            return "Error: Sheet is missing 'Change_24h' column or a required identifier column in the header."
+
+        highest_gain = -float('inf')
+        biggest_gainer_info = "N/A"
+        lowest_loss = float('inf') # Using 'lowest_loss' to find the most negative value
+        biggest_loser_info = "N/A"
+
+        for row_num, row in enumerate(data_rows, start=2): # start=2 for 1-based indexing + header
+            if len(row) <= max(id_col_index, change_col_index) or not row[change_col_index]:
+                # Skip malformed rows or rows where Change_24h is empty
+                continue
+            
+            try:
+                coin_identifier = row[id_col_index]
+                change_str = str(row[change_col_index]).strip().rstrip('%') # Strip whitespace before rstrip
+                change_val = float(change_str)
+
+                if change_val > highest_gain:
+                    highest_gain = change_val
+                    biggest_gainer_info = f"{coin_identifier} ({highest_gain:.2f}%)"
+                
+                if change_val < lowest_loss:
+                    lowest_loss = change_val
+                    biggest_loser_info = f"{coin_identifier} ({lowest_loss:.2f}%)"
+            except (ValueError, TypeError):
+                print(f"Warning: Skipping row {row_num} in sheet '{sheet_name}' due to data conversion error for 'Change_24h': {row[change_col_index]}")
+                continue 
+
+        if highest_gain == -float('inf') and lowest_loss == float('inf'):
+            return f"Could not determine performance leaders from '{sheet_name}'. No valid data found or all 'Change_24h' values were non-numeric."
+
+        return f"Performance Leaders from '{sheet_name}':\n- Highest Gain: {biggest_gainer_info}\n- Biggest Loss: {biggest_loser_info}"
+
+    except Exception as e:
+        return f"Error analyzing sheet performance for '{sheet_name}': {str(e)}"
 
 # === Prompts ===
 @mcp.prompt(
@@ -495,7 +600,10 @@ def get_prices_prompt() -> str:
 
     return "Please fetch the latest prices for all cryptocurrencies in my watchlist."
 
-@mcp.prompt()
+@mcp.prompt(
+    name = "export_prompt",
+    description="Generates a prompt to export data to a Google Sheet and share it with a specific user."
+)
 def export_prompt(sheet_name: str, user_email: str) -> str:
     """
     Prompt template for exporting to Google Sheets and sharing it.
@@ -505,6 +613,30 @@ def export_prompt(sheet_name: str, user_email: str) -> str:
     """
 
     return f"Please export all tracked price data to my Google Sheet '{sheet_name}' and share it with {user_email}."
+
+@mcp.prompt(
+    name="get_sheet_performance_leaders_prompt",
+    description="Generates a prompt to identify the best and worst performing cryptocurrencies from a specified Google Sheet."
+)
+def get_sheet_performance_leaders_prompt(sheet_name: str) -> str:
+    """
+    Generates a prompt to request an analysis of cryptocurrency performance
+    leaders from a Google Sheet.
+
+    Args:
+        sheet_name: The name of the Google Sheet to analyze.
+                    It should be a non-empty string.
+
+    Returns:
+        A formatted prompt string.
+
+    Raises:
+        ValueError: If sheet_name is empty or not a string.
+    """
+    if not sheet_name or not isinstance(sheet_name, str) or not sheet_name.strip():
+        raise ValueError("Sheet name must be a non-empty string.")
+    
+    return f"From the Google Sheet named '{sheet_name}', can you tell me which crypto had the highest gain and which one had the biggest loss recently?"
 
 if __name__ == "__main__":
 
