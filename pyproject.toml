@@ -1,0 +1,18 @@
+[project]
+name = "crypto_price_tracker_mcp"
+version = "0.1.0"
+description = "Crypto Price Tracker MCP Server"
+authors = [{name = "Royston D'Almeida"}]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx",
+    "pandas",
+    "mcp[cli]",
+    "google-api-python-client>=2.170.0",
+    "google-auth>=2.40.2",
+    "google-auth-oauthlib>=1.2.2",
+    "google-auth-httplib2>=0.2.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"] # Tells setup tools to look up in the /src directory
