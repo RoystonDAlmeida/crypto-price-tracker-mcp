@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 # Import modules for different components
@@ -340,23 +340,41 @@ async def export_to_sheets(sheet_name: str, user_email: str, ctx: Context) -> st
         
         # Prepare data for export
         export_data = []
-        for coin_id, date_modified in watchlist.items():
+        for coin_id, date_added in watchlist.items():
             price_data = await api_client.get_current_price(coin_id)
             if price_data:
+                formatted_last_updated = None
+                last_updated_utc_str = price_data.get('last_updated')
+
+                if last_updated_utc_str:
+                    try:
+                        # Parse the ISO 8601 UTC timestamp string.
+                        # The .replace('Z', '+00:00') ensures it's parsed as UTC.
+                        utc_dt = datetime.fromisoformat(last_updated_utc_str.replace('Z', '+00:00'))
+                        
+                        # Convert to local timezone
+                        local_dt = utc_dt.astimezone()
+                        
+                        # Format to a string similar to other date fields
+                        formatted_last_updated = local_dt.strftime('%Y-%m-%d %H:%M:%S')
+                    except ValueError as ve:
+                        print(f"Warning: Could not parse 'last_updated' timestamp '{last_updated_utc_str}' for {coin_id}: {ve}. Using original value.")
+                        formatted_last_updated = last_updated_utc_str # Fallback to original string
+                    except Exception as e_ts:
+                        print(f"Warning: An unexpected error occurred during timestamp conversion for {coin_id}: {e_ts}. Using original value.")
+                        formatted_last_updated = last_updated_utc_str # Fallback to original string
+
                 export_data.append({
-                    'Symbol': price_data['symbol'],
+                    'Symbol': price_data.get('symbol'),
                     'Id': coin_id,
-                    'Name': price_data['name'],
-                    'Price': price_data['price'],
-                    'Change_24h': price_data['change_24h'],
-                    'Last_Updated': price_data['last_updated'],
-                    'Added_On': watchlist[coin_id]
+                    'Name': price_data.get('name'),
+                    'Price': price_data.get('price'),
+                    'Change_24h': price_data.get('change_24h'),
+                    'Last_Updated': formatted_last_updated,
+                    'Added_On': date_added 
                 })
         
-        # Export to Google Sheets
-        success = sheets_client.export_data(sheet_name, export_data, user_email_to_share=user_email)
-        
-        if success:
+        if sheets_client.export_data(sheet_name, export_data, user_email_to_share=user_email):
             spreadsheet_url = sheets_client.get_spreadsheet_url()
             if spreadsheet_url:
                 return f"Successfully exported price data to '{sheet_name}' sheet.\nURL: {spreadsheet_url}"
@@ -369,6 +387,22 @@ async def export_to_sheets(sheet_name: str, user_email: str, ctx: Context) -> st
         return f"Error exporting to Google Sheets: {str(e)}"
 
 # === Prompts ===
+@mcp.prompt(
+    name="get_watchlist_prompt",
+    description="Generates a prompt to retrieve the user's watchlist."
+)
+def get_watchlist_prompt() -> str:
+    """
+    Generates a prompt to retrieve the user's watchlist.
+    
+    Returns:
+        A formatted prompt string requesting to retrieve the user's watchlist.
+    
+    Example:
+        get_watchlist_prompt() -> 'Please fetch the watchlist
+    """
+
+    return "Please fetch the watchlist."
 
 @mcp.prompt(
     name="add_coin_prompt",
