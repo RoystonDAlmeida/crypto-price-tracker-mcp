@@ -370,6 +370,59 @@ class GoogleSheetsClient:
             print(f"Error sharing spreadsheet: {e}")
             return False
     
+    def find_spreadsheet_by_title(self, title: str) -> Optional[str]:
+        """
+        Find an existing spreadsheet by its title. Does not create if not found.
+
+        Args:
+            title: Title of the spreadsheet.
+
+        Returns:
+            Spreadsheet ID if found, None otherwise.
+        """
+        if not self.drive_service:
+            print("Google Drive service not initialized. Cannot search for spreadsheet.")
+            return None
+        try:
+            # Ensure the title is properly escaped for the query if it contains single quotes
+            escaped_title = title.replace("'", "\\'")
+            query = f"mimeType='application/vnd.google-apps.spreadsheet' and name='{escaped_title}' and trashed=false"
+            response = self.drive_service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+            files = response.get('files', [])
+
+            if files:
+                spreadsheet_id = files[0]['id']
+                print(f"Found spreadsheet: '{files[0]['name']}' (ID: {spreadsheet_id})")
+                return spreadsheet_id
+            else:
+                print(f"Spreadsheet '{title}' not found.")
+                return None
+        except HttpError as e:
+            print(f"Error searching for spreadsheet '{title}': {e}")
+            return None
+
+    def read_sheet_data(self, spreadsheet_id: str, range_name: str = 'Sheet1!A:Z') -> Optional[List[List[Any]]]:
+        """
+        Read data from a specific range in a Google Spreadsheet.
+
+        Args:
+            spreadsheet_id: The ID of the spreadsheet.
+            range_name: The A1 notation of the range to retrieve values from (e.g., 'Sheet1!A1:D5').
+
+        Returns:
+            A list of lists containing the data (header + rows), or None if an error occurs or no data.
+        """
+        if not self.service:
+            print("Google Sheets service not initialized. Cannot read data.")
+            return None
+        try:
+            result = self.service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+            values = result.get('values', [])
+            return values if values else None
+        except HttpError as e:
+            print(f"Error reading data from spreadsheet '{spreadsheet_id}' range '{range_name}': {e}")
+            return None
+
     def get_spreadsheet_url(self) -> Optional[str]:
         """
         Get the URL of the active spreadsheet
