@@ -9,9 +9,12 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 import os
+import sys
+import logging # Added for logging
 from datetime import datetime, timezone
 import asyncio # Added for asyncio.to_thread
 from typing import Dict, List, Optional
+import argparse
 
 # Import modules for different components
 from api_client import CryptoApiClient
@@ -37,21 +40,21 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     
     # Initialize Google Sheets client
     sheets_client = None
-    credentials_path = os.getenv("GOOGLE_CREDENTIALS_PATH", "google_credentials.json")
+    credentials_path = os.getenv("GOOGLE_CREDENTIALS_PATH", "/app/google_credentials.json")
     if os.path.exists(credentials_path):
         try:
             client_instance = GoogleSheetsClient(credentials_file=credentials_path)
             if client_instance.service:
                 # Check if the service was initialised successfully
                 sheets_client = client_instance
-                print(f"Google Sheets client initialized successfully using {credentials_path}.")
+                logging.info(f"Google Sheets client initialized successfully using {credentials_path}.")
             else:
                 # GoogleSheetsClient._initialize_service already prints an error message
-               print(f"Failed to initialize Google Sheets service using {credentials_path}. The service attribute was not set. Check logs from GoogleSheetsClient.")
+               logging.error(f"Failed to initialize Google Sheets service using {credentials_path}. The service attribute was not set. Check logs from GoogleSheetsClient.")
         except Exception as e:
-            print(f"Exception occurred during GoogleSheetsClient instantiation or service initialization with {credentials_path}: {e}")
+            logging.error(f"Exception occurred during GoogleSheetsClient instantiation or service initialization with {credentials_path}: {e}")
     else:
-        print(f"Google Sheets credentials file not found at '{credentials_path}'. Sheets client will not be available.")
+        logging.warning(f"Google Sheets credentials file not found at '{credentials_path}'. Sheets client will not be available.")
     
     # Initialize watchlist manager
     watchlist_manager = WatchlistManager()
@@ -370,10 +373,10 @@ async def export_to_sheets(sheet_name: str, user_email: str, ctx: Context) -> st
                         # Format to a string similar to other date fields
                         formatted_last_updated = local_dt.strftime('%Y-%m-%d %H:%M:%S')
                     except ValueError as ve:
-                        print(f"Warning: Could not parse 'last_updated' timestamp '{last_updated_utc_str}' for {coin_id}: {ve}. Using original value.")
+                        logging.warning(f"Could not parse 'last_updated' timestamp '{last_updated_utc_str}' for {coin_id}: {ve}. Using original value.")
                         formatted_last_updated = last_updated_utc_str # Fallback to original string
                     except Exception as e_ts:
-                        print(f"Warning: An unexpected error occurred during timestamp conversion for {coin_id}: {e_ts}. Using original value.")
+                        logging.warning(f"An unexpected error occurred during timestamp conversion for {coin_id}: {e_ts}. Using original value.")
                         formatted_last_updated = last_updated_utc_str # Fallback to original string
 
                 export_data.append({
@@ -480,7 +483,7 @@ async def get_sheet_performance_leaders(sheet_name: str, ctx: Context) -> str:
                     lowest_loss = change_val
                     biggest_loser_info = f"{coin_identifier} ({lowest_loss:.2f}%)"
             except (ValueError, TypeError):
-                print(f"Warning: Skipping row {row_num} in sheet '{sheet_name}' due to data conversion error for 'Change_24h': {row[change_col_index]}")
+                logging.warning(f"Skipping row {row_num} in sheet '{sheet_name}' due to data conversion error for 'Change_24h': {row[change_col_index]}")
                 continue 
 
         if highest_gain == -float('inf') and lowest_loss == float('inf'):
@@ -513,75 +516,75 @@ def get_watchlist_prompt() -> str:
     name="add_coin_prompt",
     description="Generates a prompt to add a cryptocurrency to the user's watchlist and retrieve its current price."
 )
-def add_coin_prompt(coin_symbol: str) -> str:
+def add_coin_prompt(coin_id: str) -> str:
     """
     Generates a prompt to add a cryptocurrency to the user's watchlist and retrieve its current price.
     
     Args:
-        coin_symbol: The trading symbol of the cryptocurrency (e.g., 'BTC', 'ETH', 'SOL').
-                     Should be provided in uppercase without special characters.
+        coin_id: The trading id of the cryptocurrency (e.g., 'bitcoin', 'ethereum', 'solana').
+                 Should be provided in uppercase without special characters.
     
     Returns:
         A formatted prompt string requesting to add the specified coin to the watchlist
         and display its current price.
     
     Raises:
-        ValueError: If coin_symbol is empty or contains invalid characters.
+        ValueError: If coin_id is empty or contains invalid characters.
     
     Example:
-        add_coin_prompt('BTC') -> 'Please add BTC to my watchlist and show me its current price.'
+        add_coin_prompt('bitcoin') -> 'Please add bitcoin to my watchlist.'
     """
 
     # Validate required argument
-    if not coin_symbol:
-        raise ValueError("Coin symbol cannot be empty")
+    if not coin_id:
+        raise ValueError("Coin ID cannot be empty")
 
     # Validate argument format
-    if not isinstance(coin_symbol, str) or not coin_symbol.strip():
-        raise ValueError("Coin symbol must be a non-empty string")
+    if not isinstance(coin_id, str) or not coin_id.strip():
+        raise ValueError("Coin ID must be a non-empty string")
     
     # Standardize input format
-    coin_symbol = coin_symbol.strip().upper()
+    coin_id = coin_id.strip().upper()
 
     # Generate and return the formatted prompt
-    return f"Please add {coin_symbol} to my watchlist and show me its current price."
+    return f"Please add {coin_id} to my watchlist."
 
 
 @mcp.prompt(
     name = "remove_coin_prompt",
     description="Generates a prompt to remove a cryptocurrency from the user's watchlist."
 )
-def remove_coin_prompt(coin_symbol: str) -> str:
+def remove_coin_prompt(coin_id: str) -> str:
     """
     Generates a prompt to remove a cryptocurrency from the user's watchlist.
     
     Args:
-        coin_symbol: The trading symbol of the cryptocurrency (e.g., 'BTC', 'ETH', 'SOL').
+        coin_id: The trading symbol of the cryptocurrency (e.g., 'BTC', 'ETH', 'SOL').
                    Should be provided in uppercase without special characters.
     
     Returns:
         A formatted prompt string requesting to remove the specified coin from the watchlist.
     
     Raises:
-        ValueError: If coin_symbol is empty or contains invalid characters.
+        ValueError: If coin_id is empty or contains invalid characters.
     
     Example:
         remove_coin_prompt('BTC') -> 'Please remove BTC from my watchlist.'
     """
     
     # Validate required argument
-    if not coin_symbol:
+    if not coin_id:
         raise ValueError("Coin symbol cannot be empty")
     
     # Validate argument format
-    if not isinstance(coin_symbol, str) or not coin_symbol.strip():
+    if not isinstance(coin_id, str) or not coin_id.strip():
         raise ValueError("Coin symbol must be a non-empty string")
         
     # Standardize input format
-    coin_symbol = coin_symbol.strip().lower()
+    coin_id = coin_id.strip().lower()
     
     # Generate and return the formatted prompt
-    return f"Please remove {coin_symbol} from my watchlist."
+    return f"Please remove {coin_id} from my watchlist."
 
 @mcp.prompt(
     name = "get_prices_prompt",
@@ -638,7 +641,31 @@ def get_sheet_performance_leaders_prompt(sheet_name: str) -> str:
     
     return f"From the Google Sheet named '{sheet_name}', can you tell me which crypto had the highest gain and which one had the biggest loss recently?"
 
-if __name__ == "__main__":
+def main():
+    """Main entry point with proper argument parsing for FastMCP"""
+    parser = argparse.ArgumentParser(description='Crypto Price Tracker MCP Server')
+    parser.add_argument('--transport', choices=['stdio'], default='stdio', 
+                       help='Transport type (only stdio supported)')
+    
+    args = parser.parse_args()
+    
+    if args.transport != 'stdio':
+        logging.error(f"Unsupported transport: {args.transport}")
+        sys.exit(1)
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        stream=sys.stderr  # Log to stderr to avoid interfering with stdio transport
+    )
+    
+    try:
+        # Run FastMCP server with stdio transport
+        mcp.run(transport="stdio")
+    except Exception as e:
+        logging.error(f"Fatal error during server startup: {e}", exc_info=True)
+        sys.exit(1)
 
-    # Run the MCP server
-    mcp.run(transport="stdio")
+if __name__ == "__main__":
+    main()
