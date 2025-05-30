@@ -23,9 +23,9 @@ COPY src/ ./src/
 # Using --system to install into the system Python, common in Docker.
 RUN uv pip install  --system .
 
-# Expose the port the MCP server will run on (default for streamable-http)
-EXPOSE 8001
+# Ensure the server.py is executable
+RUN chmod +x src/server.py
 
 # Command to run the MCP server using the server.py entry point
-# The --transport type is streamable-http (Required for MCP Hosts like Github Copilot)
-CMD ["python", "src/server.py", "--transport", "streamable-http"]
+# FastMCP handles stdio transport internally
+CMD ["python", "src/server.py", "--transport", "stdio"]
