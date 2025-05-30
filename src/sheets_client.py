@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 import json
+import logging
 import os
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
@@ -51,11 +52,11 @@ class GoogleSheetsClient:
             self.service = build('sheets', 'v4', credentials=credentials)
             self.drive_service = build('drive', 'v3', credentials=credentials)
             
-            print("Google Sheets and Drive services initialized successfully.")
+            logging.info("Google Sheets and Drive services initialized successfully.")
             return True
         
         except Exception as e:
-            print(f"Error initializing Google services: {e}")
+            logging.error(f"Error initializing Google services: {e}")
 
             self.service = None
             self.drive_service = None
@@ -74,7 +75,7 @@ class GoogleSheetsClient:
         """
 
         if not self.service:
-            print("Google Sheets service not initialized. Cannot create spreadsheet.")
+            logging.error("Google Sheets service not initialized. Cannot create spreadsheet.")
             return None
             
         try:
@@ -90,11 +91,11 @@ class GoogleSheetsClient:
             self.active_spreadsheet_id = spreadsheet_id
             self.active_spreadsheet_name = title
             
-            print(f"Created spreadsheet: {title} (ID: {spreadsheet_id})")
+            logging.info(f"Created spreadsheet: {title} (ID: {spreadsheet_id})")
             return spreadsheet_id
             
         except HttpError as e:
-            print(f"Error creating spreadsheet: {e}")
+            logging.error(f"Error creating spreadsheet: {e}")
             return None
     
     def get_or_create_spreadsheet(self, title: str) -> Optional[str]:
@@ -109,7 +110,7 @@ class GoogleSheetsClient:
         """
 
         if not self.drive_service:
-            print("Google Drive service not initialized. Cannot search for spreadsheet.")
+            logging.error("Google Drive service not initialized. Cannot search for spreadsheet.")
             # Fallback to trying to create, though it might also fail if sheets service is down
             return self.create_spreadsheet(title)
 
@@ -123,13 +124,13 @@ class GoogleSheetsClient:
                 spreadsheet_id = files[0]['id']
                 self.active_spreadsheet_id = spreadsheet_id
                 self.active_spreadsheet_name = files[0]['name'] # Use actual name from Drive
-                print(f"Found existing spreadsheet: '{self.active_spreadsheet_name}' (ID: {spreadsheet_id})")
+                logging.info(f"Found existing spreadsheet: '{self.active_spreadsheet_name}' (ID: {spreadsheet_id})")
                 return spreadsheet_id
             else:
-                print(f"Spreadsheet '{title}' not found. Creating a new one.")
+                logging.info(f"Spreadsheet '{title}' not found. Creating a new one.")
                 return self.create_spreadsheet(title)
         except HttpError as e:
-            print(f"Error searching for spreadsheet '{title}': {e}")
+            logging.error(f"Error searching for spreadsheet '{title}': {e}")
             return None
     
     def export_data(self, sheet_name: str, data: List[Dict[str, Any]], user_email_to_share: Optional[str] = None) -> bool:
@@ -146,11 +147,11 @@ class GoogleSheetsClient:
         """
 
         if not self.service:
-            print("Google Sheets service not initialized")
+            logging.error("Google Sheets service not initialized")
             return False
         
         if not data:
-            print("No data to export")
+            logging.info("No data to export")
             return False
         
         try:
@@ -162,12 +163,12 @@ class GoogleSheetsClient:
             # If a user email is provided and the sheet was successfully created, share it.
             # self.active_spreadsheet_id is set by get_or_create_spreadsheet -> create_spreadsheet
             if user_email_to_share and self.active_spreadsheet_id:
-                print(f"Attempting to share spreadsheet '{self.active_spreadsheet_name}' (ID: {self.active_spreadsheet_id}) with {user_email_to_share}")
+                logging.info(f"Attempting to share spreadsheet '{self.active_spreadsheet_name}' (ID: {self.active_spreadsheet_id}) with {user_email_to_share}")
                 shared_successfully = self.share_spreadsheet(email=user_email_to_share, role='writer')
                 if shared_successfully:
-                    print(f"Spreadsheet shared successfully with {user_email_to_share}.")
+                    logging.info(f"Spreadsheet shared successfully with {user_email_to_share}.")
                 else:
-                    print(f"Failed to share spreadsheet with {user_email_to_share}. User may still need to request access manually or check service account permissions for Drive API.")
+                    logging.error(f"Failed to share spreadsheet with {user_email_to_share}. User may still need to request access manually or check service account permissions for Drive API.")
             
             # Convert data to DataFrame and add timestamp
             df = pd.DataFrame(data)
@@ -205,7 +206,7 @@ class GoogleSheetsClient:
                 body=body
             ).execute()
             
-            print(f"Successfully exported {len(data)} rows to Google Sheets. Applying formatting...")
+            logging.info(f"Successfully exported {len(data)} rows to Google Sheets. Applying formatting...")
 
             # Apply formatting
             # Assuming the data is always written to 'Sheet1', which typically has sheetId 0
@@ -240,7 +241,7 @@ class GoogleSheetsClient:
                 if 'Change_24h' in headers:
                     change_24h_col_index = headers.index('Change_24h')
             except ValueError:
-                print("Warning: Could not find 'Price' or 'Change_24h' column for specific formatting.")
+                logging.info("Warning: Could not find 'Price' or 'Change_24h' column for specific formatting.")
 
             # 2. Currency format for 'Price' column
             if price_col_index != -1:
@@ -311,18 +312,18 @@ class GoogleSheetsClient:
                         spreadsheetId=spreadsheet_id,
                         body={"requests": formatting_requests}
                     ).execute()
-                    print("Successfully applied formatting to the sheet.")
+                    logging.info("Successfully applied formatting to the sheet.")
                 except HttpError as e:
-                    print(f"Error applying formatting: {e}")
+                    logging.error(f"Error applying formatting: {e}")
             
             return True
             
         except HttpError as e:
-            print(f"Google Sheets API error: {e}")
+            logging.error(f"Google Sheets API error: {e}")
             return False
         
         except Exception as e:
-            print(f"Error exporting data to Google Sheets: {e}")
+            logging.error(f"Error exporting data to Google Sheets: {e}")
             return False
     
     def share_spreadsheet(self, email: str, role: str = 'writer') -> bool:
@@ -338,7 +339,7 @@ class GoogleSheetsClient:
         """
 
         if not self.drive_service or not self.active_spreadsheet_id:
-            print("Drive service not initialized or no active spreadsheet to share.")
+            logging.error("Drive service not initialized or no active spreadsheet to share.")
             return False
         
         try:
@@ -359,17 +360,17 @@ class GoogleSheetsClient:
         
         except HttpError as e:
             if e.resp.status == 403:
-                 print(f"Error sharing spreadsheet: Insufficient permissions for the service account to share files. Details: {e}")
+                 logging.error(f"Error sharing spreadsheet: Insufficient permissions for the service account to share files. Details: {e}")
             elif e.resp.status == 400 and "invalidSharingRequest" in str(e.content): # type: ignore
-                 print(f"Error sharing spreadsheet: Invalid sharing request, possibly due to an invalid email address '{email}'. Details: {e}")
+                 logging.error(f"Error sharing spreadsheet: Invalid sharing request, possibly due to an invalid email address '{email}'. Details: {e}")
             else:
-                print(f"Error sharing spreadsheet (HttpError): {e}")
+                logging.error(f"Error sharing spreadsheet (HttpError): {e}")
             return False
         
         except Exception as e:
-            print(f"Error sharing spreadsheet: {e}")
+            logging.error(f"Error sharing spreadsheet: {e}")
             return False
-    
+
     def find_spreadsheet_by_title(self, title: str) -> Optional[str]:
         """
         Find an existing spreadsheet by its title. Does not create if not found.
@@ -381,7 +382,7 @@ class GoogleSheetsClient:
             Spreadsheet ID if found, None otherwise.
         """
         if not self.drive_service:
-            print("Google Drive service not initialized. Cannot search for spreadsheet.")
+            logging.error("Google Drive service not initialized. Cannot search for spreadsheet.")
             return None
         try:
             # Ensure the title is properly escaped for the query if it contains single quotes
@@ -392,13 +393,13 @@ class GoogleSheetsClient:
 
             if files:
                 spreadsheet_id = files[0]['id']
-                print(f"Found spreadsheet: '{files[0]['name']}' (ID: {spreadsheet_id})")
+                logging.info(f"Found spreadsheet: '{files[0]['name']}' (ID: {spreadsheet_id})")
                 return spreadsheet_id
             else:
-                print(f"Spreadsheet '{title}' not found.")
+                logging.info(f"Spreadsheet '{title}' not found.")
                 return None
         except HttpError as e:
-            print(f"Error searching for spreadsheet '{title}': {e}")
+            logging.error(f"Error searching for spreadsheet '{title}': {e}")
             return None
 
     def read_sheet_data(self, spreadsheet_id: str, range_name: str = 'Sheet1!A:Z') -> Optional[List[List[Any]]]:
@@ -413,14 +414,14 @@ class GoogleSheetsClient:
             A list of lists containing the data (header + rows), or None if an error occurs or no data.
         """
         if not self.service:
-            print("Google Sheets service not initialized. Cannot read data.")
+            logging.error("Google Sheets service not initialized. Cannot read data.")
             return None
         try:
             result = self.service.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
             values = result.get('values', [])
             return values if values else None
         except HttpError as e:
-            print(f"Error reading data from spreadsheet '{spreadsheet_id}' range '{range_name}': {e}")
+            logging.error(f"Error reading data from spreadsheet '{spreadsheet_id}' range '{range_name}': {e}")
             return None
 
     def get_spreadsheet_url(self) -> Optional[str]:
