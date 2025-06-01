@@ -14,5 +14,12 @@ dependencies = [
     "google-auth-httplib2>=0.2.0",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"] # Tells setup tools to look up in the /src directory
+[tool.setuptools]
+# Explicitly list top-level Python modules found in the 'src' directory.
+py-modules = ["server", "api_client", "sheets_client", "watchlist"]
+
+[tool.setuptools.package-dir]
+"" = "src" # Maps the root package "" (top-level modules) to the "src" directory
+
+[project.scripts]
+crypto-price-tracker-server = "server:main"   # Create an executable cmd script for the file which contains "main" method
