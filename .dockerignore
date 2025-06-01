@@ -1,0 +1,30 @@
+# Docker ignore rules(File gets invoked while building image)
+
+# Git
+.git
+.gitignore
+
+# Python bytecode and cache
+*.__pycache__/
+
+# Virtual environments
+.venv
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Test-related
+.pytest_cache/
+
+# IDE and editor specific
+.vscode/
+.cursor/
+
+# Log files
+*.log
+
+# Local secrets or configuration files that should not be in the image,
+# since google_credentials.json is mounted in deployment,
+google_credentials.json
